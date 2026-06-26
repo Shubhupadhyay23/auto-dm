@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id                 String         @id @default(cuid())
+  name               String
+  instagramPageId    String         @unique
+  accessToken        String         // encrypted or raw IG page token
+  hours              Json           // { mon: "9-6", tue: "9-6", ... }
+  tone               String         @default("friendly")
+  offHoursMessage    String         @default("We are currently closed. We will reply soon!")
+  escalationKeywords String[]       @default(["speak to someone","human","agent","call me"])
+  notifyEmails       String[]
+  notifyWhatsapp     String?
+  services           Json?          // [{ name, price }]
+  sheetId            String?        // Google Sheets target
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  faqs               FAQ[]
+  leads              Lead[]
+  conversations      Conversation[]
+  users              User[]
+}
+
+model FAQ {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  keywords    String[]
+  question    String
+  answer      String
+  isActive    Boolean  @default(true)
+  matchCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([businessId, isActive])
+}
+
+enum ConversationStatus {
+  ACTIVE
+  WAITING_HUMAN
+  RESOLVED
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum ReplyType {
+  FAQ_MATCH
+  AI_REPLY
+  HANDOFF
+  LEAD_CAPTURE
+  HUMAN
+}
+
+enum LeadStatus {
+  NEW
+  WARM
+  HOT
+  ESCALATED
+  RESOLVED
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+model Conversation {
+  id                 String             @id @default(cuid())
+  businessId         String
+  business           Business           @relation(fields: [businessId], references: [id])
+  instagramUserId    String
+  instagramThreadId  String
+  status             ConversationStatus @default(ACTIVE)
+  handoffAt          DateTime?
+  resolvedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  messages           Message[]
+  lead               Lead?
+
+  @@unique([businessId, instagramUserId])
+  @@index([businessId, status])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      Direction
+  content        String
+  replyType      ReplyType?
+  confidence     Float?
+  sentAt         DateTime     @default(now())
+
+  @@index([conversationId, sentAt])
+}
+
+model Lead {
+  id              String       @id @default(cuid())
+  businessId      String
+  business        Business     @relation(fields: [businessId], references: [id])
+  conversationId  String       @unique
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  name            String?
+  phone           String?
+  email           String?
+  serviceInterest String?
+  status          LeadStatus   @default(NEW)
+  instagramHandle String?
+  notes           String?
+  crmId           String?
+  sheetsRowId     String?
+  capturedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([businessId, status])
+}
+
+model User {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  name       String?
+  password   String
+  role       Role      @default(STAFF)
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id])
+  createdAt  DateTime  @default(now())
+}
